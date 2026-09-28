@@ -18,6 +18,7 @@ common shared
                   , aeson
                   , http-types
                   , warp
+                  , directory
 
 library
   import:           shared
@@ -38,6 +39,10 @@ library
                     Instances.FreeAccess
                     Instances.Session
                     Instances.Maintenance
+                    Errors
+                    Form
+                    Registry
+                    Web
                     Reports
                     Menu
 
@@ -45,4 +50,5 @@ executable display-classes
   import:           shared
   hs-source-dirs:   app
   main-is:          Main.hs
+  ghc-options:      -threaded
   build-depends:    display-classes

@@ -3,14 +3,24 @@ module Main (main) where
 import Config (loadConnectInfo)
 import Control.Exception (bracket, try)
 import qualified Database.MySQL.Base as Base
-import Database.MySQL.Simple (ConnectInfo (..), close, connect)
+import Database.MySQL.Simple (ConnectInfo (..), Connection, close, connect)
 import Menu (mainMenu)
+import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, hSetEncoding, stderr, stdin, stdout, utf8)
+import Text.Read (readMaybe)
+import Web (runWeb)
 
+-- | Without arguments the console menu starts; `--web [port]` starts the web interface.
 main :: IO ()
 main = do
   mapM_ (`hSetEncoding` utf8) [stdin, stdout, stderr]
+  args <- getArgs
+  app <- case args of
+    [] -> pure mainMenu
+    ["--web"] -> pure (runWeb 8080)
+    ["--web", port] | Just p <- readMaybe port -> pure (runWeb p)
+    _ -> hPutStrLn stderr "Usage: display-classes [--web [port]]" >> exitFailure
   info <- loadConnectInfo
   result <- try (connect info)
   case result of
@@ -18,4 +28,4 @@ main = do
       hPutStrLn stderr ("Cannot connect to MySQL at " ++ connectHost info ++ ": " ++ Base.errMessage err)
       hPutStrLn stderr "Check that the server is running and DB_* environment variables are correct."
       exitFailure
-    Right conn -> bracket (pure conn) close mainMenu
+    Right conn -> bracket (pure conn) close (app :: Connection -> IO ())

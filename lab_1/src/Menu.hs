@@ -1,45 +1,19 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | Console menus. Data management is one generic CRUD menu that works for any type
 -- with the required class instances.
 module Menu (mainMenu) where
 
 import Classes
-import Control.Exception (Handler (..), SomeException, catches, displayException, throwIO)
+import Control.Exception (SomeException, catch, throwIO)
+import qualified Data.Map.Strict as Map
 import Data.Proxy (Proxy (..))
-import qualified Database.MySQL.Base as Base
-import Database.MySQL.Simple (Connection, FormatError (..), QueryError (..))
-import Database.MySQL.Simple.Result (ResultError)
+import Data.Time (Day, TimeOfDay)
+import Database.MySQL.Simple (Connection)
+import Errors (errorMessage, isFatal)
 import Input
-import Instances.Classroom ()
-import Instances.Discipline ()
-import Instances.FreeAccess ()
-import Instances.Lesson ()
-import Instances.Maintenance ()
-import Instances.Session ()
-import Instances.Teacher ()
-import Instances.User ()
-import Instances.Workstation ()
-import Reports (reports)
-import System.Exit (ExitCode)
+import Registry
+import Reports
 import Table
-import Types
-
--- | Table type packed together with its instances.
-data TableSpec = forall a. (Repository a, Displayable a, Inputable a, Validatable a) => TableSpec String (Proxy a)
-
-tables :: [TableSpec]
-tables =
-  [ TableSpec "Classrooms" (Proxy :: Proxy Classroom)
-  , TableSpec "Workstations" (Proxy :: Proxy Workstation)
-  , TableSpec "Users" (Proxy :: Proxy User)
-  , TableSpec "Teachers" (Proxy :: Proxy Teacher)
-  , TableSpec "Disciplines" (Proxy :: Proxy Discipline)
-  , TableSpec "Schedule (planned lessons)" (Proxy :: Proxy Lesson)
-  , TableSpec "Free access time" (Proxy :: Proxy FreeAccess)
-  , TableSpec "Workstation sessions (usage)" (Proxy :: Proxy Session)
-  , TableSpec "Maintenance log" (Proxy :: Proxy Maintenance)
-  ]
+import Text.Read (readMaybe)
 
 mainMenu :: Connection -> IO ()
 mainMenu conn = do
@@ -59,11 +33,11 @@ tablesMenu conn = do
 
 reportsMenu :: Connection -> IO ()
 reportsMenu conn = do
-  choice <- chooseMenu "Reports and queries" "Back" (map fst reports)
+  choice <- chooseMenu "Reports and queries" "Back" (map reportTitle reports)
   if choice == 0
     then pure ()
     else do
-      safely (snd (reports !! (choice - 1)) conn)
+      safely (runReport conn (reports !! (choice - 1)))
       reportsMenu conn
 
 -- | List / find / add / edit / delete for any table type.
@@ -101,33 +75,57 @@ crudMenu conn title p = do
           putStrLn (if deleted then "Deleted." else "Nothing deleted.")
         else putStrLn "Cancelled."
 
-    -- validation without DB, then business rules with DB, then the write itself
     save :: a -> IO () -> IO ()
-    save x write = case validate x of
-      Left err -> putStrLn ("Not saved: " ++ err)
-      Right valid -> do
-        problems <- conflicts conn valid
-        if null problems
-          then write
-          else putStrLn "Not saved:" >> mapM_ (putStrLn . ("  - " ++)) problems
+    save x write = do
+      problems <- checkRecord conn x
+      if null problems
+        then write
+        else putStrLn "Not saved:" >> mapM_ (putStrLn . ("  - " ++)) problems
+
+-- | Ask the report parameters in the console, run it and print the result tables.
+runReport :: Connection -> Report -> IO ()
+runReport conn r = do
+  args <- Map.fromList <$> mapM askParam (reportParams r)
+  reportRun r conn args >>= mapM_ printReportTable
+  where
+    askParam prm = (,) (rpName prm) <$> case rpKind prm of
+      PRef target -> case lookupRef target of
+        Just (RefSpec px) -> show <$> chooseRef conn px (rpLabel prm) Nothing
+        Nothing -> throwIO (UserAbort ("Unknown table " ++ target))
+      PDate -> askTyped (Proxy :: Proxy Day) prm
+      PTime -> askTyped (Proxy :: Proxy TimeOfDay) prm
+      PChoice options -> do
+        opts <- options conn
+        putStrLn (rpLabel prm ++ " - available: " ++ unwords opts)
+        let loop = do
+              v <- ask (rpLabel prm)
+              if v `elem` opts then pure v else putStrLn "  Choose one of the listed values." >> loop
+        loop
+
+-- | Ask a typed value; the parameter default is offered and kept on empty input.
+askTyped :: forall v. FieldInput v => Proxy v -> ReportParam -> IO String
+askTyped _ prm =
+  showField <$> case parseField (rpDefault prm) :: Maybe v of
+    Just def -> askEdit (rpLabel prm) def
+    Nothing -> ask (rpLabel prm)
+
+printReportTable :: ReportTable -> IO ()
+printReportTable t = do
+  putStrLn ""
+  if null (rtTitle t) then pure () else putStrLn (rtTitle t ++ ":")
+  if null (rtRows t)
+    then putStrLn (rtEmpty t)
+    else printTable (rtHeaders t) (map drawBar (rtRows t))
+  where
+    drawBar row = case rtBar t of
+      Just i -> [if j == i then bar c else c | (j, c) <- zip [0 ..] row]
+      Nothing -> row
+    bar s = case readMaybe s :: Maybe Double of
+      Just pct -> let n = max 0 (min 20 (round (pct / 5))) in replicate n '#' ++ replicate (20 - n) '.'
+      Nothing -> s
 
 -- | Run an action and report errors instead of crashing the program.
 safely :: IO () -> IO ()
 safely action =
-  action
-    `catches` [ Handler (\(e :: ExitCode) -> throwIO e)
-              , Handler (\(UserAbort msg) -> putStrLn msg)
-              , Handler (\(e :: Base.MySQLError) -> putStrLn (describeDbError e))
-              , Handler (\(e :: QueryError) -> putStrLn ("Query error: " ++ qeMessage e))
-              , Handler (\(e :: FormatError) -> putStrLn ("Query format error: " ++ fmtMessage e))
-              , Handler (\(e :: ResultError) -> putStrLn ("Result conversion error: " ++ show e))
-              , Handler (\(e :: SomeException) -> putStrLn ("Error: " ++ displayException e))
-              ]
-
-describeDbError :: Base.MySQLError -> String
-describeDbError e = case Base.errNumber e of
-  1062 -> "Duplicate value: " ++ Base.errMessage e
-  1451 -> "Cannot delete or change: the record is used by other records (delete them first)."
-  1452 -> "Referenced record does not exist."
-  3819 -> "Check constraint failed: " ++ Base.errMessage e
-  n -> "Database error " ++ show n ++ ": " ++ Base.errMessage e
+  action `catch` \(e :: SomeException) ->
+    if isFatal e then throwIO e else putStrLn (errorMessage e)

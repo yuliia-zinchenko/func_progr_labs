@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Display Classes</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">DC</div>
+      <div>
+        <div class="brand-title">Display Classes</div>
+        <div class="brand-sub">Faculty schedule</div>
+      </div>
+    </div>
+    <nav id="nav"></nav>
+  </aside>
+
+  <main id="main">
+    <div class="loading">Loading…</div>
+  </main>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header class="modal-head">
+        <h2 id="modal-title"></h2>
+        <button class="icon-btn" data-close aria-label="Close">×</button>
+      </header>
+      <form id="modal-form" novalidate>
+        <div id="modal-errors" class="errors" hidden></div>
+        <div id="modal-fields" class="fields"></div>
+        <footer class="modal-foot">
+          <button type="button" class="btn" data-close>Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
