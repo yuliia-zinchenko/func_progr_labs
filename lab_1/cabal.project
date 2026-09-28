@@ -1,0 +1,11 @@
+packages: .
+
+-- Packages `mysql` and `pcre-light` use custom Setup.hs scripts that do not build
+-- with Cabal >= 3.14, so their setup scripts are compiled with an older Cabal.
+constraints: setup.Cabal < 3.14
+allow-newer: Cabal, base
+
+-- Homebrew location of MySQL client and pcre headers/libraries (Apple Silicon).
+package *
+  extra-include-dirs: /opt/homebrew/include
+  extra-lib-dirs:     /opt/homebrew/lib

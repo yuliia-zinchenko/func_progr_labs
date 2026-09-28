@@ -1,0 +1,48 @@
+cabal-version:      2.4
+name:               display-classes
+version:            1.0.0
+synopsis:           Information system "Faculty display classes schedule" (Haskell + MySQL)
+build-type:         Simple
+
+common shared
+  default-language: GHC2021
+  ghc-options:      -Wall -Wno-orphans
+  build-depends:    base >=4.18 && <5
+                  , mysql-simple >=0.4.9 && <0.5
+                  , mysql >=0.2.1 && <0.3
+                  , bytestring
+                  , text
+                  , time
+                  , containers
+                  , scotty
+                  , aeson
+                  , http-types
+                  , warp
+
+library
+  import:           shared
+  hs-source-dirs:   src
+  exposed-modules:  Config
+                    Types
+                    RowParser
+                    Classes
+                    Input
+                    Table
+                    Instances.Enums
+                    Instances.Classroom
+                    Instances.Workstation
+                    Instances.User
+                    Instances.Teacher
+                    Instances.Discipline
+                    Instances.Lesson
+                    Instances.FreeAccess
+                    Instances.Session
+                    Instances.Maintenance
+                    Reports
+                    Menu
+
+executable display-classes
+  import:           shared
+  hs-source-dirs:   app
+  main-is:          Main.hs
+  build-depends:    display-classes
